@@ -83,6 +83,8 @@ class QLearningAgent:
         return self.q.get((state, action), 0.0)
 
     def choose_action(self, state, actions):
+        if not actions:
+            return None
         if random.random() < self.epsilon:
             return random.choice(actions)
         qs = [self.get_q(state, a) for a in actions]
@@ -97,42 +99,55 @@ class QLearningAgent:
             state, action
         )] = old_q + self.alpha * (reward + self.gamma * future_q - old_q)
 
-    def train_against_random(self, episodes=1000):
-        game = TicTacToe()
+    def train_against_random(self, episodes=10000):
+        """Train as both X and O, with reward shaping."""
         wins = 0
-
-        for _ in range(episodes):
-            game.reset()
-            states = []
-            actions = []
-
+        draws = 0
+        losses = 0
+        for ep in range(episodes):
+            game = TicTacToe()
+            agent_player = 'X' if ep % 2 == 0 else 'O'
+            opponent = 'O' if agent_player == 'X' else 'X'
+            state = game.get_state()
+            done = False
+            moves = []
             while not game.is_game_over():
-                state = game.get_state()
                 available = game.available_actions()
-
-                if len(states) % 2 == 0:  # Agent's turn (X)
-                    action = self.choose_action(state, available)
-                    states.append(state)
-                    actions.append(action)
-                else:  # Random opponent (O)
-                    action = random.choice(available)
-
-                game.step(action, 'X' if len(states) % 2 == 0 else 'O')
-
-            # Learn from the game
-            reward = game.check_winner('X')
-            if reward > 0:
-                wins += 1
-
-            for i in range(len(states)):
-                if i == len(states) - 1:
-                    self.learn(states[i], actions[i], reward, game.get_state(),
-                               [])
+                if game.board.count('X') == game.board.count('O'):
+                    turn = 'X'
                 else:
-                    self.learn(states[i], actions[i], 0, states[i + 1],
-                               game.available_actions())
-
-        return wins / episodes
+                    turn = 'O'
+                if turn == agent_player:
+                    action = self.choose_action(state, available)
+                    moves.append((state, action))
+                    game.step(action, agent_player)
+                else:
+                    action = random.choice(available)
+                    game.step(action, opponent)
+                state = game.get_state()
+            # Assign rewards
+            if game.check_winner(agent_player) > 0:
+                reward = 10.0
+                wins += 1
+            elif game.check_winner(opponent) > 0:
+                reward = -10.0
+                losses += 1
+            elif game.is_draw():
+                reward = 1.0
+                draws += 1
+            else:
+                reward = 0.0
+            # Learn from moves
+            for i, (s, a) in enumerate(moves):
+                if i == len(moves) - 1:
+                    self.learn(s, a, reward, state, [])
+                else:
+                    next_s = moves[i + 1][0]
+                    temp_game = TicTacToe()
+                    temp_game.board = list(next_s)
+                    next_available = temp_game.available_actions()
+                    self.learn(s, a, 0, next_s, next_available)
+        return {'win': wins, 'draw': draws, 'loss': losses}
 
 
 class MinimaxAgent:
